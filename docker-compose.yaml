@@ -82,7 +82,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.http.routers.chatwoot2_app.rule=Host(`chat.pelg.com.br`)
-        - tratefik.http.routers.chatwoot2_app.entrypoints=websecure
+        - traefik.http.routers.chatwoot2_app.entrypoints=websecure
         - traefik.http.routers.chatwoot2_app.tls.certresolver=letsencryptresolver
         - traefik.http.routers.chatwoot2_app.priority=1
         - traefik.http.routers.chatwoot2_app.service=chatwoot2_app
