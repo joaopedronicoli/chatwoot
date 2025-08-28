@@ -1,119 +1,198 @@
-version: '3'
+version: '3.7'
 
 services:
-  base: &base
+  chatwoot2_app:
     build:
       context: .
       dockerfile: ./docker/Dockerfile
       args:
-        BUNDLE_WITHOUT: ''
+        BUNDLE_WITHOUT: 'development test'
         EXECJS_RUNTIME: 'Node'
-        RAILS_ENV: 'development'
-        RAILS_SERVE_STATIC_FILES: 'false'
-    tty: true
-    stdin_open: true
-    image: chatwoot:development
-    env_file: .env
-
-  rails:
-    <<: *base
-    build:
-      context: .
-      dockerfile: ./docker/dockerfiles/rails.Dockerfile
-    image: chatwoot-rails:development
+        RAILS_ENV: 'production'
+        RAILS_SERVE_STATIC_FILES: 'true'
+    image: chatwoot-fazer-ai:production
+    
     volumes:
-      - ./:/app:delegated
-      - node_modules:/app/node_modules
-      - packs:/app/public/packs
-      - cache:/app/tmp/cache
-      - bundle:/usr/local/bundle
-    depends_on:
-      - postgres
-      - redis
-      - vite
-      - mailhog
-      - sidekiq
-    ports:
-      - 3000:3000
-    env_file: .env
+      - chatwoot2_storage:/app/storage
+      - chatwoot2_public:/app/public
+      - chatwoot2_mailer:/app/app/views/devise/mailer
+      - chatwoot2_mailers:/app/app/views/mailers
+
+    networks:
+      - network_public
+    
     environment:
-      - VITE_DEV_SERVER_HOST=vite
-      - NODE_ENV=development
-      - RAILS_ENV=development
+      - INSTALLATION_NAME=Servidor Secundário
+      - SECRET_KEY_BASE=f326e19e5efc90b219c8938d258b0362
+      - FRONTEND_URL=https://chat.pelg.com.br
+      - FORCE_SSL=true
+      - DEFAULT_LOCALE=pt_BR
+      - TZ=America/Sao_Paulo
+      - REDIS_URL=redis://chatwoot2_redis:6379
+      - POSTGRES_HOST=pgvector
+      - POSTGRES_USERNAME=postgres
+      - POSTGRES_PASSWORD=1a3ab94c5fd15189ff9048b76af2ea8b
+      - POSTGRES_DATABASE=chatwoot
+      - ACTIVE_STORAGE_SERVICE=local
+
+      # SMTP (587 + STARTTLS)
+      - MAILER_SENDER_EMAIL="suporte@patriciaelias.com.br <suporte@patriciaelias.com.br>"
+      - SMTP_DOMAIN=patriciaelias.com.br
+      - SMTP_ADDRESS=smtp.hostinger.com
+      - SMTP_PORT=587
+      - SMTP_SSL=false
+      - SMTP_USERNAME=suporte@patriciaelias.com.br
+      - SMTP_PASSWORD=1270Estetica-
+      - SMTP_AUTHENTICATION=login
+      - SMTP_ENABLE_STARTTLS_AUTO=true
+      - SMTP_OPENSSL_VERIFY_MODE=peer
+      - MAILER_INBOUND_EMAIL_DOMAIN=suporte@patriciaelias.com.br
+
+      # Tuning
+      - SIDEKIQ_CONCURRENCY=10
+      - RACK_TIMEOUT_SERVICE_TIMEOUT=0
+      - RAILS_MAX_THREADS=5
+      - WEB_CONCURRENCY=2
+      - ENABLE_RACK_ATTACK=false
+
+      # Rails/Docker
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - RAILS_LOG_TO_STDOUT=true
+      - USE_INBOX_AVATAR_FOR_BOT=true
+      - ENABLE_ACCOUNT_SIGNUP=false
+
     entrypoint: docker/entrypoints/rails.sh
     command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
-
-  sidekiq:
-    <<: *base
-    image: chatwoot-rails:development
-    volumes:
-      - ./:/app:delegated
-      - node_modules:/app/node_modules
-      - packs:/app/public/packs
-      - cache:/app/tmp/cache
-      - bundle:/usr/local/bundle
+    
     depends_on:
-      - postgres
-      - redis
-      - mailhog
-    environment:
-      - NODE_ENV=development
-      - RAILS_ENV=development
-    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+      - chatwoot2_redis
 
-  vite:
-    <<: *base
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.chatwoot2_app.rule=Host(`chat.pelg.com.br`)
+        - tratefik.http.routers.chatwoot2_app.entrypoints=websecure
+        - traefik.http.routers.chatwoot2_app.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.chatwoot2_app.priority=1
+        - traefik.http.routers.chatwoot2_app.service=chatwoot2_app
+        - traefik.http.services.chatwoot2_app.loadbalancer.server.port=3000
+        - traefik.http.services.chatwoot2_app.loadbalancer.passHostHeader=true
+        - traefik.http.middlewares.sslheader2.headers.customrequestheaders.X-Forwarded-Proto=https
+        - traefik.http.routers.chatwoot2_app.middlewares=sslheader2
+
+  chatwoot2_sidekiq:
     build:
       context: .
-      dockerfile: ./docker/dockerfiles/vite.Dockerfile
-    image: chatwoot-vite:development
+      dockerfile: ./docker/Dockerfile
+      args:
+        BUNDLE_WITHOUT: 'development test'
+        EXECJS_RUNTIME: 'Node'
+        RAILS_ENV: 'production'
+        RAILS_SERVE_STATIC_FILES: 'true'
+    image: chatwoot-fazer-ai:production
+    
     volumes:
-      - ./:/app:delegated
-      - node_modules:/app/node_modules
-      - packs:/app/public/packs
-      - cache:/app/tmp/cache
-      - bundle:/usr/local/bundle
-    ports:
-      - "3036:3036" # Vite dev server
-    environment:
-      - VITE_DEV_SERVER_HOST=0.0.0.0
-      - NODE_ENV=development
-      - RAILS_ENV=development
-    entrypoint: docker/entrypoints/vite.sh
-    command: bin/vite dev
+      - chatwoot2_storage:/app/storage
+      - chatwoot2_public:/app/public
+      - chatwoot2_mailer:/app/app/views/devise/mailer
+      - chatwoot2_mailers:/app/app/views/mailers
 
-  postgres:
-    image: pgvector/pgvector:pg16
-    restart: always
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres:/data/postgres
-    environment:
-      - POSTGRES_DB=chatwoot
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=
+    networks:
+      - network_public
 
-  redis:
+    environment:
+      - INSTALLATION_NAME=Servidor Secundário
+      - SECRET_KEY_BASE=f326e19e5efc90b219c8938d258b0362
+      - FRONTEND_URL=https://chat.pelg.com.br
+      - FORCE_SSL=true
+      - DEFAULT_LOCALE=pt_BR
+      - TZ=America/Sao_Paulo
+      - REDIS_URL=redis://chatwoot2_redis:6379
+      - POSTGRES_HOST=pgvector
+      - POSTGRES_USERNAME=postgres
+      - POSTGRES_PASSWORD=1a3ab94c5fd15189ff9048b76af2ea8b
+      - POSTGRES_DATABASE=chatwoot
+      - ACTIVE_STORAGE_SERVICE=local
+
+      # SMTP (587 + STARTTLS) — sidekiq também precisa
+      - MAILER_SENDER_EMAIL="suporte@patriciaelias.com.br <suporte@patriciaelias.com.br>"
+      - SMTP_DOMAIN=patriciaelias.com.br
+      - SMTP_ADDRESS=smtp.hostinger.com
+      - SMTP_PORT=587
+      - SMTP_SSL=false
+      - SMTP_USERNAME=suporte@patriciaelias.com.br
+      - SMTP_PASSWORD=1270Estetica-
+      - SMTP_AUTHENTICATION=login
+      - SMTP_ENABLE_STARTTLS_AUTO=true
+      - SMTP_OPENSSL_VERIFY_MODE=peer
+      - MAILER_INBOUND_EMAIL_DOMAIN=suporte@patriciaelias.com.br
+
+      # Tuning
+      - SIDEKIQ_CONCURRENCY=10
+      - RACK_TIMEOUT_SERVICE_TIMEOUT=0
+      - RAILS_MAX_THREADS=5
+      - WEB_CONCURRENCY=2
+      - ENABLE_RACK_ATTACK=false
+
+      # Rails/Docker
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - RAILS_LOG_TO_STDOUT=true
+      - USE_INBOX_AVATAR_FOR_BOT=true
+      - ENABLE_ACCOUNT_SIGNUP=false
+
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    
+    depends_on:
+      - chatwoot2_redis
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+
+  chatwoot2_redis:
     image: redis:alpine
-    restart: always
-    command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\""]
-    env_file: .env
+    command: ["redis-server","--appendonly","yes","--port","6379"]
     volumes:
-      - redis:/data/redis
-    ports:
-      - '6379:6379'
-
-  mailhog:
-    image: mailhog/mailhog
-    ports:
-      - 1025:1025
-      - 8025:8025
+      - chatwoot2_redis:/data
+    networks:
+      - network_public
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2048M
 
 volumes:
-  postgres:
-  redis:
-  packs:
-  node_modules:
-  cache:
-  bundle:
+  chatwoot2_storage:
+  chatwoot2_public:
+  chatwoot2_mailer:
+  chatwoot2_mailers:
+  chatwoot2_redis:
+
+networks:
+  network_public:
+    external: true
+    name: network_public
